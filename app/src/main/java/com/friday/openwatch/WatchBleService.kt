@@ -243,6 +243,12 @@ class WatchBleService : Service() {
 
             writeChar = uartService.getCharacteristic(uartWrite)
             val notifyChar = uartService.getCharacteristic(uartNotify)
+            writeChar?.let { wc ->
+                log("writeChar properties=0x${wc.properties.toString(16)} " +
+                    "WRITE=${wc.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0} " +
+                    "WRITE_NO_RESPONSE=${wc.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0} " +
+                    "permissions=0x${wc.permissions.toString(16)}")
+            }
             if (notifyChar != null) {
                 g.setCharacteristicNotification(notifyChar, true)
                 val cccd = notifyChar.getDescriptor(Protocol.CCCD)
