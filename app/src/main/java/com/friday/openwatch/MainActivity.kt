@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -165,7 +166,7 @@ class MainActivity : AppCompatActivity() {
         val statusBtnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         statusBtnRow.addView(secondaryButton("Refresh") { statusText.text = statusSummary() })
         statusBtnRow.addView(rowSpacer())
-        statusBtnRow.addView(secondaryButton("Scan & connect") { scanAndConnect() })
+        statusBtnRow.addView(secondaryButton("Connect") { connectByMac() })
         statusCard.addView(statusBtnRow)
         statusCard.addView(secondaryButtonFullWidth("Reset pairing (after watch factory reset)") {
             Prefs.clearBoundOnce(this@MainActivity)
@@ -364,44 +365,49 @@ class MainActivity : AppCompatActivity() {
         ActivityCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
 
     @Suppress("MissingPermission")
-    private fun scanAndConnect() {
-        val needsScan = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            hasPermission(Manifest.permission.BLUETOOTH_SCAN)
+    private fun connectByMac() {
         val needsConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-        if (!needsScan || !needsConnect) {
+        if (!needsConnect) {
             requestRuntimePermissions()
             return
         }
 
         val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
         if (adapter == null || !adapter.isEnabled) {
-            statusText.text = "Bluetooth adapter not available/enabled"
+            statusText.text = "Bluetooth is off — please enable it and try again"
             return
         }
-        val scanner = adapter.bluetoothLeScanner
-        if (scanner == null) {
-            statusText.text = "bluetoothLeScanner is null (adapter not ready) - toggle Bluetooth off/on and retry"
-            return
-        }
-        statusText.text = "Scanning for 10s..."
 
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val name = result.device.name ?: return
-                if (name == "Watch") {
-                    scanner.stopScan(this)
-                    val address = result.device.address
-                    Prefs.setDeviceAddress(this@MainActivity, address)
-                    WatchBleService.connectTo(this@MainActivity, address)
-                    runOnUiThread { statusText.text = "Found watch: $address\nConnecting..." }
-                }
-            }
+        // Get all devices already paired with the phone
+        val paired = adapter.bondedDevices?.toList() ?: emptyList()
+        if (paired.isEmpty()) {
+            statusText.text = "No paired Bluetooth devices found.\nPair your watch in Settings → Bluetooth first."
+            return
         }
-        scanner.startScan(callback)
-        android.os.Handler(mainLooper).postDelayed({
-            scanner.stopScan(callback)
-        }, 10_000)
+
+        // Build display names: "Watch Name (XX:XX:XX:XX:XX:XX)"
+        val savedAddress = Prefs.deviceAddress(this)
+        val labels = paired.map { device ->
+            val name = device.name?.takeIf { it.isNotBlank() } ?: "Unknown device"
+            "$name  (${device.address})"
+        }.toTypedArray()
+
+        // Pre-select the previously connected device if any
+        val checkedItem = paired.indexOfFirst { it.address == savedAddress }
+
+        AlertDialog.Builder(this)
+            .setTitle("Select your watch")
+            .setSingleChoiceItems(labels, checkedItem) { dialog, which ->
+                val device = paired[which]
+                Prefs.setDeviceAddress(this, device.address)
+                WatchBleService.connectTo(this, device.address)
+                val name = device.name?.takeIf { it.isNotBlank() } ?: device.address
+                statusText.text = "Connecting to $name…"
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun loadPreview(uri: Uri) {
