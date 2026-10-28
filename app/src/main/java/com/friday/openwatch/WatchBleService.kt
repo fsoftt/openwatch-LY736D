@@ -389,14 +389,10 @@ class WatchBleService : Service() {
         val g = gatt ?: return
         val packet = outbox.peek() ?: return // NOT removed until onCharacteristicWrite confirms success
         draining = true
-        // Use the write type that the characteristic actually supports
-        char.writeType = when {
-            char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ->
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-            char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 ->
-                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            else -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        }
+        // Force WRITE_TYPE_NO_RESPONSE — these watch firmwares do not acknowledge writes.
+        // Using WRITE_TYPE_DEFAULT causes status=1 (GATT_FAILURE) because the device
+        // never sends a write confirmation, but the data IS received by the watch.
+        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         char.value = packet
         val ok = g.writeCharacteristic(char)
         if (!ok) {
