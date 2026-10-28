@@ -213,13 +213,24 @@ class WatchBleService : Service() {
             g.services.forEach { svc ->
                 log("  service: ${svc.uuid}  characteristics: ${svc.characteristics.map { it.uuid }}")
             }
-            val service = g.getService(Protocol.UART_SERVICE) ?: run {
+
+            // Try primary UUID first (LJ736/LY736D original), then alternate variant (dcca9f)
+            val uartService = g.getService(Protocol.UART_SERVICE)
+                ?: g.getService(Protocol.UART_SERVICE_ALT)
+            if (uartService == null) {
                 log("UART service not found among ${g.services.size} services")
                 updateStatus("UART service not found — see log for available services")
                 return
             }
-            writeChar = service.getCharacteristic(Protocol.UART_WRITE)
-            val notifyChar = service.getCharacteristic(Protocol.UART_NOTIFY)
+
+            val isAlt = uartService.uuid == Protocol.UART_SERVICE_ALT
+            if (isAlt) log("Using alternate UART UUID variant (dcca9f)")
+
+            val uartWrite = if (isAlt) Protocol.UART_WRITE_ALT else Protocol.UART_WRITE
+            val uartNotify = if (isAlt) Protocol.UART_NOTIFY_ALT else Protocol.UART_NOTIFY
+
+            writeChar = uartService.getCharacteristic(uartWrite)
+            val notifyChar = uartService.getCharacteristic(uartNotify)
             if (notifyChar != null) {
                 g.setCharacteristicNotification(notifyChar, true)
                 val cccd = notifyChar.getDescriptor(Protocol.CCCD)
