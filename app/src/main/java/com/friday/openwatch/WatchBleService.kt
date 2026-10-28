@@ -210,9 +210,12 @@ class WatchBleService : Service() {
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             log("onServicesDiscovered status=$status")
+            g.services.forEach { svc ->
+                log("  service: ${svc.uuid}  characteristics: ${svc.characteristics.map { it.uuid }}")
+            }
             val service = g.getService(Protocol.UART_SERVICE) ?: run {
                 log("UART service not found among ${g.services.size} services")
-                updateStatus("UART service not found")
+                updateStatus("UART service not found — see log for available services")
                 return
             }
             writeChar = service.getCharacteristic(Protocol.UART_WRITE)
