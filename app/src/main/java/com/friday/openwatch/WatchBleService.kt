@@ -90,12 +90,38 @@ class WatchBleService : Service() {
 
     private fun log(msg: String) = AppLog.log(this, TAG, msg)
 
+    private val bondReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+            if (device.address != deviceAddress) return
+            val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+            log("Bond state changed: $state for ${device.address}")
+            when (state) {
+                BluetoothDevice.BOND_BONDED -> {
+                    log("BLE bond established — reconnecting")
+                    @Suppress("MissingPermission")
+                    gatt?.close()
+                    gatt = null
+                    connected = false
+                    writeChar = null
+                    deviceAddress?.let { connect(it) }
+                }
+                BluetoothDevice.BOND_NONE -> {
+                    log("Bond failed or removed")
+                    updateStatus("Bluetooth pairing failed — try again")
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
         startForeground(NOTIF_ID, buildStatusNotification("Starting…"))
         deviceAddress = Prefs.deviceAddress(this)
         log("service created, saved address=$deviceAddress")
+        registerReceiver(bondReceiver, android.content.IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED))
         // NOTE: do NOT connect here — onStartCommand handles ACTION_CONNECT.
         // Auto-connect on boot is handled by BootReceiver which sends ACTION_CONNECT explicitly.
     }
@@ -248,6 +274,14 @@ class WatchBleService : Service() {
                     "WRITE=${wc.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0} " +
                     "WRITE_NO_RESPONSE=${wc.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0} " +
                     "permissions=0x${wc.permissions.toString(16)}")
+            }
+            // If no BLE bond exists yet, create one before writing.
+            // permissions=0x0 means the characteristic requires encryption (bonding).
+            if (g.device.bondState != BluetoothDevice.BOND_BONDED) {
+                log("No BLE bond — calling createBond()")
+                g.device.createBond()
+                // onBondStateChanged will trigger reconnect once bond is established
+                return
             }
             if (notifyChar != null) {
                 g.setCharacteristicNotification(notifyChar, true)
@@ -412,6 +446,7 @@ class WatchBleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         log("service destroyed")
+        try { unregisterReceiver(bondReceiver) } catch (_: Exception) {}
         @Suppress("MissingPermission")
         gatt?.close()
     }
