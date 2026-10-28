@@ -36,6 +36,8 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
+    private lateinit var connectionDot: View
+    private lateinit var connectionLabel: TextView
     private lateinit var logText: TextView
     private lateinit var widthInput: EditText
     private lateinit var heightInput: EditText
@@ -72,8 +74,31 @@ class MainActivity : AppCompatActivity() {
                     pushWatchfaceBtn.text = "Push to watch"
                     statusText.text = if (success) "Watchface push complete." else "Watchface push failed."
                 }
+                WatchBleService.ACTION_CONNECTION_STATUS -> {
+                    val text = intent.getStringExtra(WatchBleService.EXTRA_STATUS_TEXT) ?: return
+                    val isConnected = intent.getBooleanExtra(WatchBleService.EXTRA_IS_CONNECTED, false)
+                    statusText.text = text
+                    updateConnectionDot(isConnected, text)
+                }
             }
         }
+    }
+
+    private fun updateConnectionDot(isConnected: Boolean, statusMsg: String) {
+        val color = when {
+            isConnected -> Color.parseColor("#22C55E")            // green
+            statusMsg.contains("Connecting", ignoreCase = true) ||
+            statusMsg.contains("Scanning", ignoreCase = true)   -> Color.parseColor("#F59E0B") // amber
+            else -> Color.parseColor("#EF4444")                  // red
+        }
+        connectionDot.background.setTint(color)
+        connectionLabel.text = when {
+            isConnected -> "Connected"
+            statusMsg.contains("Connecting", ignoreCase = true) -> "Connecting…"
+            statusMsg.contains("Scanning", ignoreCase = true)   -> "Scanning…"
+            else -> "Disconnected"
+        }
+        connectionLabel.setTextColor(color)
     }
 
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
@@ -161,6 +186,28 @@ class MainActivity : AppCompatActivity() {
         // Status card
         val statusCard = card()
         statusCard.addView(sectionTitle("STATUS"))
+
+        // Connection indicator row: ● Connected / Disconnected
+        val dotRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 12.dp())
+        }
+        connectionDot = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(12.dp(), 12.dp()).apply { marginEnd = 10.dp() }
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_pill_soft)
+            background.setTint(Color.parseColor("#EF4444"))
+        }
+        connectionLabel = TextView(this).apply {
+            text = "Disconnected"
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#EF4444"))
+        }
+        dotRow.addView(connectionDot)
+        dotRow.addView(connectionLabel)
+        statusCard.addView(dotRow)
+
         statusText = bodyText(statusSummary())
         statusCard.addView(statusText)
         val statusBtnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -322,6 +369,7 @@ class MainActivity : AppCompatActivity() {
         val filter = IntentFilter().apply {
             addAction(WatchBleService.ACTION_WATCHFACE_PROGRESS)
             addAction(WatchBleService.ACTION_WATCHFACE_DONE)
+            addAction(WatchBleService.ACTION_CONNECTION_STATUS)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(watchfaceProgressReceiver, filter, RECEIVER_NOT_EXPORTED)

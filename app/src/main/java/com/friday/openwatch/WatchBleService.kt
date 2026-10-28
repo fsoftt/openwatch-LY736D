@@ -29,6 +29,10 @@ class WatchBleService : Service() {
         const val EXTRA_ICON = "icon"
         const val EXTRA_FRAME_PATH = "frame_path"
 
+        const val ACTION_CONNECTION_STATUS = "com.friday.openwatch.action.CONNECTION_STATUS"
+        const val EXTRA_STATUS_TEXT = "status_text"
+        const val EXTRA_IS_CONNECTED = "is_connected"
+
         const val ACTION_WATCHFACE_PROGRESS = "com.friday.openwatch.action.WATCHFACE_PROGRESS"
         const val ACTION_WATCHFACE_DONE = "com.friday.openwatch.action.WATCHFACE_DONE"
         const val EXTRA_SENT = "sent"
@@ -103,6 +107,13 @@ class WatchBleService : Service() {
                     Prefs.setDeviceAddress(this, addr)
                     deviceAddress = addr
                     reconnectDelay = BASE_RECONNECT_DELAY_MS
+                    // Close any existing GATT connection before starting a new one
+                    handler.removeCallbacksAndMessages(null)
+                    @Suppress("MissingPermission")
+                    gatt?.close()
+                    gatt = null
+                    connected = false
+                    writeChar = null
                     connect(addr)
                 }
             }
@@ -352,6 +363,12 @@ class WatchBleService : Service() {
     }
 
     private fun updateStatus(text: String) {
+        val isConnected = connected && writeChar != null
+        sendBroadcast(Intent(ACTION_CONNECTION_STATUS).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_STATUS_TEXT, text)
+            putExtra(EXTRA_IS_CONNECTED, isConnected)
+        })
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIF_ID, buildStatusNotification(text))
     }
