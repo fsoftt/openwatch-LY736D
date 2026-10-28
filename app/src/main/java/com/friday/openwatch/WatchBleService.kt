@@ -348,7 +348,14 @@ class WatchBleService : Service() {
         val g = gatt ?: return
         val packet = outbox.peek() ?: return // NOT removed until onCharacteristicWrite confirms success
         draining = true
-        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        // Use the write type that the characteristic actually supports
+        char.writeType = when {
+            char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ->
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            char.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 ->
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            else -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        }
         char.value = packet
         val ok = g.writeCharacteristic(char)
         if (!ok) {
@@ -358,8 +365,15 @@ class WatchBleService : Service() {
             return
         }
         val hex = packet.joinToString("") { "%02x".format(it) }
-        log("write ${if (hex.length > 80) hex.take(80) + "…(${packet.size}B)" else hex} queued=$ok")
-        handler.postDelayed({ if (draining) { draining = false; drainOutbox() } }, COMMAND_SPACING_MS * 4)
+        log("write ${if (hex.length > 80) hex.take(80) + "…(${packet.size}B)" else hex} type=${char.writeType} queued=$ok")
+        // WRITE_TYPE_NO_RESPONSE never triggers onCharacteristicWrite — advance queue manually
+        if (char.writeType == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) {
+            outbox.poll()
+            draining = false
+            handler.postDelayed({ drainOutbox() }, COMMAND_SPACING_MS)
+        } else {
+            handler.postDelayed({ if (draining) { draining = false; drainOutbox() } }, COMMAND_SPACING_MS * 4)
+        }
     }
 
     private fun updateStatus(text: String) {
