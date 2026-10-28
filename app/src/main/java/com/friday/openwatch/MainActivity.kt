@@ -166,7 +166,7 @@ class MainActivity : AppCompatActivity() {
         val statusBtnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         statusBtnRow.addView(secondaryButton("Refresh") { statusText.text = statusSummary() })
         statusBtnRow.addView(rowSpacer())
-        statusBtnRow.addView(secondaryButton("Connect") { connectByMac() })
+        statusBtnRow.addView(secondaryButton("Connect") { scanOrPickDevice() })
         statusCard.addView(statusBtnRow)
         statusCard.addView(secondaryButtonFullWidth("Reset pairing (after watch factory reset)") {
             Prefs.clearBoundOnce(this@MainActivity)
@@ -365,10 +365,12 @@ class MainActivity : AppCompatActivity() {
         ActivityCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED
 
     @Suppress("MissingPermission")
-    private fun connectByMac() {
+    private fun scanOrPickDevice() {
+        val needsScan = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            hasPermission(Manifest.permission.BLUETOOTH_SCAN)
         val needsConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             hasPermission(Manifest.permission.BLUETOOTH_CONNECT)
-        if (!needsConnect) {
+        if (!needsScan || !needsConnect) {
             requestRuntimePermissions()
             return
         }
@@ -379,21 +381,58 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Get all devices already paired with the phone
+        val scanner = adapter.bluetoothLeScanner
+        if (scanner == null) {
+            statusText.text = "BLE scanner not ready — toggle Bluetooth off/on and retry"
+            return
+        }
+
+        statusText.text = "Scanning for watch… (10s)"
+        var found = false
+
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val name = result.device.name ?: return
+                if (name == "Watch") {
+                    found = true
+                    scanner.stopScan(this)
+                    val address = result.device.address
+                    Prefs.setDeviceAddress(this@MainActivity, address)
+                    WatchBleService.connectTo(this@MainActivity, address)
+                    runOnUiThread { statusText.text = "Found watch: $address\nConnecting..." }
+                }
+            }
+        }
+
+        scanner.startScan(callback)
+        android.os.Handler(mainLooper).postDelayed({
+            scanner.stopScan(callback)
+            if (!found) {
+                runOnUiThread {
+                    statusText.text = "Watch not found via BLE scan — showing paired devices…"
+                    connectByMac()
+                }
+            }
+        }, 10_000)
+    }
+
+    @Suppress("MissingPermission")
+    private fun connectByMac() {
+        val adapter = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
+            ?: return
+
         val paired = adapter.bondedDevices?.toList() ?: emptyList()
         if (paired.isEmpty()) {
             statusText.text = "No paired Bluetooth devices found.\nPair your watch in Settings → Bluetooth first."
             return
         }
 
-        // Build display names: "Watch Name (XX:XX:XX:XX:XX:XX)"
         val savedAddress = Prefs.deviceAddress(this)
         val labels = paired.map { device ->
             val name = device.name?.takeIf { it.isNotBlank() } ?: "Unknown device"
             "$name  (${device.address})"
         }.toTypedArray()
 
-        // Pre-select the previously connected device if any
         val checkedItem = paired.indexOfFirst { it.address == savedAddress }
 
         AlertDialog.Builder(this)
