@@ -8,9 +8,9 @@ import java.util.UUID
  * FitPro / HiWatch Plus APK) and validated against real hardware (LJ736d / JQ7011 board).
  */
 object Protocol {
-    val UART_SERVICE: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9d")
-    val UART_WRITE: UUID = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9d")
-    val UART_NOTIFY: UUID = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9d")
+    val UART_SERVICE: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9f")
+    val UART_WRITE: UUID = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9f")
+    val UART_NOTIFY: UUID = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9f")
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
     // Standard BLE Battery Service - not proprietary, same on any BLE device.
