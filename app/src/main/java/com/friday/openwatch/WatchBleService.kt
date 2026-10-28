@@ -96,7 +96,8 @@ class WatchBleService : Service() {
         startForeground(NOTIF_ID, buildStatusNotification("Starting…"))
         deviceAddress = Prefs.deviceAddress(this)
         log("service created, saved address=$deviceAddress")
-        if (deviceAddress != null) connect(deviceAddress!!)
+        // NOTE: do NOT connect here — onStartCommand handles ACTION_CONNECT.
+        // Auto-connect on boot is handled by BootReceiver which sends ACTION_CONNECT explicitly.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
